@@ -3,19 +3,9 @@
 #include <unordered_set>
 #include <vector>
 #include <string>
+#include <chrono>
 
 #include "layout.hpp"
-
-// Input format (simple):
-// Each layout is separated by a blank line.
-// Each placement line:  room wall artwork orientation
-// Example:
-// 1 1 1 0
-// 1 2 2 90
-// 2 1 3 0
-//
-// <blank line>
-// ...
 
 static bool parse_layouts(const std::string& path, std::vector<Layout>& out) {
     std::ifstream in(path);
@@ -43,7 +33,7 @@ static bool parse_layouts(const std::string& path, std::vector<Layout>& out) {
 }
 
 int main(int argc, char** argv) {
-    std::string file = (argc >= 2) ? argv[1] : "data/small_layouts.txt";
+    std::string file = (argc >= 2) ? argv[1] : "data/large_layouts.txt";
 
     std::vector<Layout> layouts;
     if (!parse_layouts(file, layouts)) {
@@ -51,26 +41,45 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Hash set of canonical strings (simple, robust collision handling: strings compare exactly).
-    std::unordered_set<std::string> seen;
+    std::cout << "Layouts read: " << layouts.size() << "\n\n";
 
-    int duplicates = 0;
+    // --- OLD SLOW METHOD (String Hashing) ---
+    auto start_slow = std::chrono::high_resolution_clock::now();
+    std::unordered_set<std::string> seen_slow;
+    int duplicates_slow = 0;
     for (std::size_t i = 0; i < layouts.size(); i++) {
         const std::string key = layouts[i].canonical_string();
-        if (seen.find(key) != seen.end()) {
-            duplicates++;
-            std::cout << "DUPLICATE layout at index " << i << "\n";
+        if (seen_slow.find(key) != seen_slow.end()) {
+            duplicates_slow++;
         } else {
-            seen.insert(key);
+            seen_slow.insert(key);
         }
     }
+    auto end_slow = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms_slow = end_slow - start_slow;
 
-    std::cout << "Layouts read: " << layouts.size() << "\n";
-    std::cout << "Unique layouts: " << seen.size() << "\n";
-    std::cout << "Duplicates: " << duplicates << "\n";
+    // --- NEW FAST METHOD (Zobrist Hashing) ---
+    auto start_fast = std::chrono::high_resolution_clock::now();
+    std::unordered_set<Layout, LayoutHash> seen_fast;
+    int duplicates_fast = 0;
+    for (std::size_t i = 0; i < layouts.size(); i++) {
+        if (seen_fast.find(layouts[i]) != seen_fast.end()) {
+            duplicates_fast++;
+        } else {
+            seen_fast.insert(layouts[i]);
+        }
+    }
+    auto end_fast = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms_fast = end_fast - start_fast;
 
-    std::cout << "\nTODO (students):\n"
-              << " - Replace canonical_string hashing with a faster incremental hash (e.g., Zobrist/XOR).\n"
-              << " - Add symmetry-reduction (e.g., room rotations/mirroring) before hashing.\n";
+    // --- RESULTS ---
+    std::cout << "=== PERFORMANCE RESULTS ===\n";
+    std::cout << "Unique layouts: " << seen_fast.size() << "\n";
+    std::cout << "Duplicates:     " << duplicates_fast << "\n\n";
+
+    std::cout << "Slow Method (String Hashing) Time:  " << ms_slow.count() << " ms\n";
+    std::cout << "Fast Method (Zobrist Hashing) Time: " << ms_fast.count() << " ms\n";
+    std::cout << "Speedup: " << ms_slow.count() / ms_fast.count() << "x faster!\n";
+
     return 0;
 }

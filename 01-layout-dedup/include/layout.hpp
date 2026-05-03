@@ -3,14 +3,33 @@
 #include <string>
 #include <algorithm>
 #include <sstream>
+#include <random>
+#include <unordered_map>
 #include "placement.hpp"
 
-// A Layout is just a set of placements (order should NOT matter).
-// To hash it, we canonicalize by sorting and then hashing the sequence.
+// Generates and caches a random 64-bit value for each unique placement
+struct ZobristTable {
+    std::mt19937_64 rng{1337}; // Fixed seed for reproducibility
+    std::unordered_map<std::size_t, std::uint64_t> table;
+
+    std::uint64_t get_value(const Placement& p) {
+        std::size_t phash = PlacementHash{}(p);
+        if (table.find(phash) == table.end()) {
+            table[phash] = rng();
+        }
+        return table[phash];
+    }
+
+    static ZobristTable& get() {
+        static ZobristTable instance;
+        return instance;
+    }
+};
+
 struct Layout {
     std::vector<Placement> placements;
 
-    // Canonical string form (simple + debuggable)
+    // Keep for exact equality check on collisions
     std::string canonical_string() const {
         std::vector<Placement> v = placements;
         std::sort(v.begin(), v.end(), [](const Placement& a, const Placement& b){
@@ -25,5 +44,25 @@ struct Layout {
                 << p.artwork_id << "," << p.orientation << ";";
         }
         return out.str();
+    }
+
+    // TASK A: Zobrist Hashing (O(N) time, completely order-independent via XOR)
+    std::size_t fast_zobrist_hash() const {
+        std::uint64_t h = 0;
+        for (const auto& p : placements) {
+            h ^= ZobristTable::get().get_value(p);
+        }
+        return static_cast<std::size_t>(h);
+    }
+
+    // Equality operator handles any hash collisions seamlessly
+    bool operator==(const Layout& other) const {
+        return this->canonical_string() == other.canonical_string();
+    }
+};
+
+struct LayoutHash {
+    std::size_t operator()(const Layout& l) const {
+        return l.fast_zobrist_hash();
     }
 };
